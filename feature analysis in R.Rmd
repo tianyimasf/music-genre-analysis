@@ -1,0 +1,67 @@
+---
+title: "Music genre feature analysis"
+author: "Tianyi Ma (Alex)"
+date: "05.09.2023"
+output: html_document
+    # odt_document: default
+    # word_document: default
+    # pdf_document: default
+# editor_options:
+  # chunk_output_type: console
+editor_options: 
+  chunk_output_type: inline
+---
+
+## Installing and loading common packages and libraries
+
+```{r}
+install.packages('devtools')
+```
+
+```{r}
+install.packages('tidyverse', repos = "http://cran.us.r-project.org")
+devtools::install_github("hrbrmstr/hrbrthemes")
+install.packages('viridis')
+```
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(forcats)
+library(hrbrthemes)
+library(viridis)
+library(lubridate)
+```
+
+## Loading data csv
+
+```{r}
+df <- read.csv("data/music genre data.csv", header=TRUE)
+```
+
+```{r}
+df
+```
+
+
+```{r}
+by_genre <- df %>% group_by(Genre)
+by_genre
+```
+
+
+```{r}
+by_genre %>% tally()
+```
+
+
+
+
+
+
+
+
+
+
