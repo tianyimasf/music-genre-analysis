@@ -53,9 +53,47 @@ by_genre
 
 
 ```{r}
-by_genre %>% tally()
+alt <- by_genre %>% filter(Genre=="Alt")
+alt
 ```
 
+```{r}
+col_names <- colnames(df)
+col_names
+```
+```{r}
+feature_names <- c(col_names[3:6], col_names[8:11])
+feature_names
+```
+```{r}
+loudness_min <- min(alt$loudness)
+loudness_max <- max(alt$loudness)
+loudness_range <- loudness_max - loudness_min
+alt$loudness <- (alt$loudness - loudness_min)/loudness_range
+```
+
+
+```{r}
+plot_alt <- pivot_longer(alt, cols = feature_names)
+plot_alt$name <- factor(plot_alt$name, feature_names)
+
+p <- plot_alt %>%
+  ggplot( aes(x=name, y=value, fill=name, color=name)) +
+    geom_violin(width=2.1, size=0.2) +
+    scale_fill_viridis(discrete=TRUE) +
+    scale_color_viridis(discrete=TRUE) +
+    theme_ipsum() +
+    theme(
+      legend.position="none",
+      axis.text.x = element_text(angle = 30, hjust=0.8),
+      axis.title.x = element_text(size = 12, hjust=0.45, vjust=0)
+    ) +
+    xlab("Music Features") +
+    ylab("Distribution") +
+    ggtitle("Value Distribution for Genre: Alt")
+
+p
+```
 
 
 
