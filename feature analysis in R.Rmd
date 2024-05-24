@@ -12,6 +12,11 @@ editor_options:
   chunk_output_type: inline
 ---
 
+# Music Genre Analysis
+
+This R notebook analyze features related to 10 different music genres with the data provided here: https://www.kaggle.com/datasets/purumalgi/music-genre-classification, likely scraped from the Spotify Dev API. This dataset is particularly interesting and suitable for an analysis case study because most of the features are qualities of the songs of certain genre that's been numericalized by Spotify, such as danceability, energy, and liveness, so that we don't have to extract those features from raw audio features ourselves. When analyzed, these features are shown to be meaningful indeed.
+
+
 ## Installing and loading common packages and libraries
 
 ```{r}
@@ -51,77 +56,152 @@ df <- df %>% drop_na()
 df
 ```
 
+## 1. Visualize music features for each genre
+
+For the first step of the analysis, I want to visualize the music features for each genre. The goal is to create a depiction of how each genre sound like by visualizing their properties, which are just the features. For example, I'd imagine that hip hop musics are very danceable, and metal musics are loud and have high energy. 
+
+First, we group songs from the same genre together. 
 
 ```{r}
 by_genre <- df %>% group_by(Genre)
 by_genre
 ```
 
+Get the Alt music group to check that `group_by()` is working.
 
 ```{r}
 alt <- by_genre %>% filter(Genre=="Alt")
 alt
 ```
 
+Now we select the columns that we want to visualize. This is equivalent to select different music features to depict a genre. Here we include instrumentalness, danceability, energy, loudness, speechiness, acousticness, liveness and valence. I'll also include their definitions and a dictionary that maps each term to its definition here. 
+
+### Definitions of music features
+
+- **instrumentalness**: Predicts whether a track contains no vocals. "Ooh" and "aah" sounds are treated as instrumental in this context. Rap or spoken word tracks are clearly "vocal". The closer the instrumentalness value is to 1.0, the greater likelihood the track contains no vocal content. Values above 0.5 are intended to represent instrumental tracks, but confidence is higher as the value approaches 1.0.
+
+- **danceability**: Danceability describes how suitable a track is for dancing based on a combination of musical elements including tempo, rhythm stability, beat strength, and overall regularity. A value of 0.0 is least danceable and 1.0 is most danceable.  
+
+- **energy**: Energy is a measure from 0.0 to 1.0 and represents a perceptual measure of intensity and activity. Typically, energetic tracks feel fast, loud, and noisy. For example, death metal has high energy, while a Bach prelude scores low on the scale. Perceptual features contributing to this attribute include dynamic range, perceived loudness, timbre, onset rate, and general entropy.
+
+- **loudness**: The overall loudness of a track in decibels (dB). Loudness values are averaged across the entire track and are useful for comparing relative loudness of tracks. Loudness is the quality of a sound that is the primary psychological correlate of physical strength (amplitude). Values typically range between -60 and 0 db.
+
+- **speechiness**: Speechiness detects the presence of spoken words in a track. The more exclusively speech-like the recording (e.g. talk show, audio book, poetry), the closer to 1.0 the attribute value. Values above 0.66 describe tracks that are probably made entirely of spoken words. Values between 0.33 and 0.66 describe tracks that may contain both music and speech, either in sections or layered, including such cases as rap music. Values below 0.33 most likely represent music and other non-speech-like tracks.
+
+- **acousticness**: A confidence measure from 0.0 to 1.0 of whether the track is acoustic. 1.0 represents high confidence the track is acoustic. 
+
+- **liveness**: Detects the presence of an audience in the recording. Higher liveness values represent an increased probability that the track was performed live. A value above 0.8 provides strong likelihood that the track is live.
+
+- **valence**: A measure from 0.0 to 1.0 describing the musical positiveness conveyed by a track. Tracks with high valence sound more positive (e.g. happy, cheerful, euphoric), while tracks with low valence sound more negative (e.g. sad, depressed, angry).
+
+- **tempo**: The overall estimated tempo of a track in beats per minute (BPM). In musical terminology, tempo is the speed or pace of a given piece and derives directly from the average beat duration.
+
+First we get all column names of the dataset.
 
 ```{r}
 col_names <- colnames(df)
 col_names
 ```
 
-```{r}
-feature_names <- c(col_names[3:6], col_names[8:11])
-feature_names
-```
+Then we select the columns that represents music features.
 
 ```{r}
-normalize_loudness <- function(tb) {
-  loudness_min <- min(tb$loudness)
-  loudness_max <- max(tb$loudness)
-  loudness_range <- loudness_max - loudness_min
+feature_names <- c(col_names[3:6], col_names[8:12])
+feature_names
+```
+Here we create a dictionary of the associated definition of each feature so that we can use this to aid visualization later.
+
+```{r}
+definitions_helper <- c("instrumentalness"="Predicts whether a track contains no vocals.",
+  "danceability"="Describes how suitable a track is for dancing.", 
+  "energy"="Represents a perceptual measure of intensity and activity.",
+  "loudness"="The overall loudness of a track in decibels (dB).",
+  "speechiness"="Speechiness detects the presence of spoken words in a track.",
+  "acousticness"="A confidence measure from 0.0 to 1.0 of whether the track is acoustic.",
+  "liveness"="Detects the presence of an audience in the recording.",
+  "valence"="A measure from 0.0 to 1.0 describing the musical positiveness conveyed by a track.",
+  "tempo"="The overall estimated tempo of a track in beats per minute (BPM). "
+  )
+```
+
+Finally, it's time to apply visualization to each genre group. First, we define a function to normalize column values to between 0 and 1. This is applied to loudness and tempo, so that we can visualize them in the same scale as other features which all have range between 0 and 1. 
+
+Technically, the normalized values lose the actual measured values which has physical meanings like number of decibels and BPM, but since we use min max normalization they will still preserve the relative scale between songs' feature values, so the distribution of values for those columns are still preserved and meaningful for our analysis.
+
+```{r}
+normalize_column <- function(tb, col) {
+  col_min <- min(tb[, col])
+  col_max <- max(tb[, col])
+  col_range <- col_max - col_min
   tb_return <- tb
-  tb_return$loudness <- (tb$loudness - loudness_min)/loudness_range
+  tb_return[, col] <- (tb[, col] - col_min)/col_range
   return(tb_return)
 }
 ```
 
+To plot a graph for each group, we can apply the `group_map()` function to the groups `by_genre`. The syntax allow us to feed `.x` to the plotting function as an argument, where `x` is the table for the group without the column we group the dataset by, which in our case is `Genre`. For this reason, we need to feed `.y` to `group_map()` as the second argument so that we have access to the genre associated with each group. 
+
+This requires us to take in two argument, the first one will be the group table, and the second one is the Genre column that contains the group's genre. 
+
+The violin plot function from ggplot2 takes in a categorical variable and one or more numerical variable(s). For this reason we need to convert music feature columns from wide format to long format. If you don't know the different between long and wide format, [here is a short, nice guide for it. ](https://www.statology.org/long-vs-wide-data/) Basically after converting we'll get all the feature categories as values in one column and the associated values in another column. Since all data in a group is from the same genre, it won't be a categorical variable within the group, and we'll have one categorical column, namely the types of music features, and the associated numerical column. Then we'll be ready to create the violin plot!
+
+Creating a violin plot is just like creating other plots in ggplot2 and we just need to use the plotting function `geom_violin()`. 
 
 ```{r}
 plot_tb <- function(tb, group_by_column) {
-  tb <- normalize_loudness(tb)
+  tb <- normalize_col(tb, 'loudness')
+  tb <- normalize_col(tb, 'tempo')
   plot <- pivot_longer(tb, cols = feature_names)
   plot$name <- factor(plot$name, feature_names)
   tb_genre <- group_by_column$Genre
-  if (tb_genre != ""){
-    p <- plot %>%
-    ggplot( aes(x=name, y=value, fill=name, color=name)) +
-      geom_violin(width=2.1, size=0.2) +
-      scale_fill_viridis(discrete=TRUE) +
-      scale_color_viridis(discrete=TRUE) +
-      theme_ipsum() +
-      theme(
-        legend.position="none",
-        axis.text.x = element_text(angle = 30, hjust=0.8),
-        axis.title.x = element_text(size = 12, hjust=0.45)
-      ) +
-      xlab("Music Features") +
-      ylab("Distribution") +
-      ggtitle(paste("Value Distribution for Genre: ", tb_genre))
+  p <- plot %>%
+  ggplot( aes(x=name, y=value, fill=name, color=name)) +
+    geom_violin(width=2.1, size=0.2) +
+    scale_fill_viridis(discrete=TRUE) +
+    scale_color_viridis(discrete=TRUE) +
+    theme_ipsum() +
+    theme(
+      legend.position="none",
+      axis.text.x = element_text(angle = 30, hjust=0.8),
+      axis.title.x = element_text(size = 12, hjust=0.45)
+    ) +
+    xlab("Music Features") +
+    ylab("Distribution") +
+    ggtitle(paste("Value Distribution for Genre: ", tb_genre))
   
-    p
-  }
+  p
 }
 ```
+
+The syntax of `group_map()` is `group_map(~f(**args))`. According to the docs:
+
+- . or .x to refer to the subset of rows of .tbl for the given group. Aka. dependent variables of the group data.
+
+- .y to refer to the key, a one row tibble with one column per grouping variable that identifies the group. Aka. the target variable(s) of the group data. If you grouped by more than one columns, there will be more than one columns in this table which are those columns you used to group by the dataset.
+
+So here according to how we designed `plot_tb()`, the correct syntax is `group_map(~plot_tb(.x, .y))`.
 
 ```{r}
 by_genre %>% group_map(~plot_tb(.x, .y))
 ```
+
+## 2. Visualize and compare each music feature across genres.
+
+After creating plots for all music features for each genre, I feel like it's hard to tell the uniqueness between genres with these graphs. Yes, the distributions for each feature can be very different within each genre, but if you look at all of the graphs holistically it seems like some features are low/distributed similarly for all genres, so its "local minimality" doesn't seem meaningful to me if that feature is low across genres. It seems like the graphs don't do justice to depict each genre.
+
+This leads me to attempt to visualize and compare each music feature across genres.
+
+This is much easier to do because we don't need to wrangle the data before feeding them into a plotting function. The format of the data is already correct. We just need a for loop to create the graph for each feature column. Let's create the plotting function for a specific column.
+
+We used violin graph last time and I love violin plot because it not only show you the quantiles but also roughly the actual distributions. So a feature could have multiple peak values and it would show in a violin plot but not a box plot. However, compare to histogram, violin plot could also smooth out the minimal points and makes it look like there are still some values on the low points even if there is none. Which is why I'll overlay the violin plot with a jitter points plot to allow a more robust understanding of the value distributions. To avoid clustering the plots with too much data (we do have a relatively big dataset if we're actually plotting every point), I sampled 500 rows from the dataset and used that to plot the jitter points plot. 
 
 ```{r}
 plot_column <- function(tb, numerical_column) {
   genre <- tb$Genre
   
   if (numerical_column == 'loudness') {
+    value <- normalize_loudness(tb)[,numerical_column]
+  } else if (numerical_column == 'tempo') {
     value <- normalize_loudness(tb)[,numerical_column]
   } else {
     value <- tb[,numerical_column]
