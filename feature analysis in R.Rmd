@@ -7,7 +7,7 @@ output: html_document
     # word_document: default
     # pdf_document: default
 # editor_options:
-  # chunk_output_type: console
+#   chunk_output_type: console
 editor_options: 
   chunk_output_type: inline
 ---
@@ -25,6 +25,10 @@ install.packages('viridis')
 ```
 
 ```{r}
+install.packages("ggbeeswarm")
+```
+
+```{r}
 library(tidyverse)
 library(ggplot2)
 library(dplyr)
@@ -33,6 +37,7 @@ library(forcats)
 library(hrbrthemes)
 library(viridis)
 library(lubridate)
+library(ggbeeswarm)
 ```
 
 ## Loading data csv
@@ -42,6 +47,7 @@ df <- read.csv("data/music genre data.csv", header=TRUE)
 ```
 
 ```{r}
+df <- df %>% drop_na()
 df
 ```
 
@@ -57,43 +63,103 @@ alt <- by_genre %>% filter(Genre=="Alt")
 alt
 ```
 
+
 ```{r}
 col_names <- colnames(df)
 col_names
 ```
+
 ```{r}
 feature_names <- c(col_names[3:6], col_names[8:11])
 feature_names
 ```
+
 ```{r}
-loudness_min <- min(alt$loudness)
-loudness_max <- max(alt$loudness)
-loudness_range <- loudness_max - loudness_min
-alt$loudness <- (alt$loudness - loudness_min)/loudness_range
+normalize_loudness <- function(tb) {
+  loudness_min <- min(tb$loudness)
+  loudness_max <- max(tb$loudness)
+  loudness_range <- loudness_max - loudness_min
+  tb_return <- tb
+  tb_return$loudness <- (tb$loudness - loudness_min)/loudness_range
+  return(tb_return)
+}
 ```
 
 
 ```{r}
-plot_alt <- pivot_longer(alt, cols = feature_names)
-plot_alt$name <- factor(plot_alt$name, feature_names)
-
-p <- plot_alt %>%
-  ggplot( aes(x=name, y=value, fill=name, color=name)) +
-    geom_violin(width=2.1, size=0.2) +
-    scale_fill_viridis(discrete=TRUE) +
-    scale_color_viridis(discrete=TRUE) +
-    theme_ipsum() +
-    theme(
-      legend.position="none",
-      axis.text.x = element_text(angle = 30, hjust=0.8),
-      axis.title.x = element_text(size = 12, hjust=0.45, vjust=0)
-    ) +
-    xlab("Music Features") +
-    ylab("Distribution") +
-    ggtitle("Value Distribution for Genre: Alt")
-
-p
+plot_tb <- function(tb, group_by_column) {
+  tb <- normalize_loudness(tb)
+  plot <- pivot_longer(tb, cols = feature_names)
+  plot$name <- factor(plot$name, feature_names)
+  tb_genre <- group_by_column$Genre
+  if (tb_genre != ""){
+    p <- plot %>%
+    ggplot( aes(x=name, y=value, fill=name, color=name)) +
+      geom_violin(width=2.1, size=0.2) +
+      scale_fill_viridis(discrete=TRUE) +
+      scale_color_viridis(discrete=TRUE) +
+      theme_ipsum() +
+      theme(
+        legend.position="none",
+        axis.text.x = element_text(angle = 30, hjust=0.8),
+        axis.title.x = element_text(size = 12, hjust=0.45)
+      ) +
+      xlab("Music Features") +
+      ylab("Distribution") +
+      ggtitle(paste("Value Distribution for Genre: ", tb_genre))
+  
+    p
+  }
+}
 ```
+
+```{r}
+by_genre %>% group_map(~plot_tb(.x, .y))
+```
+
+```{r}
+plot_column <- function(tb, numerical_column) {
+  genre <- tb$Genre
+  
+  if (numerical_column == 'loudness') {
+    value <- normalize_loudness(tb)[,numerical_column]
+  } else {
+    value <- tb[,numerical_column]
+  }
+  
+  tb_sample <- tb[sample(nrow(df), 500), ]
+  tb_genre <- tb_sample$Genre
+  tb_value <- tb_sample[,numerical_column]
+  
+  p <- ggplot(data=tb, aes(x=genre, y=value, fill=genre, color=genre)) +
+      geom_violin(width=2.1, size=0.2) +
+      geom_point(data=tb_sample, aes(x=tb_genre, y=tb_value, fill=tb_genre), 
+                 position = position_jitter(seed = 1, width = 0.2), color='grey', alpha=0.65) +
+      scale_fill_viridis(discrete=TRUE) +
+      scale_color_viridis(discrete=TRUE) +
+      theme_ipsum() +
+      theme(
+        legend.position="none",
+        axis.text.x = element_text(angle = 30, hjust=0.8),
+        axis.title.x = element_text(size = 12, hjust=0.45)
+      ) +
+      xlab("Music Genres") +
+      ylab("Distribution") +
+      ggtitle(paste("Genre Value Distribution for Value: ", numerical_column))
+  
+  print(p)
+}
+```
+
+
+```{r}
+for (col in feature_names) {
+  plot_column(df, col)
+}
+```
+
+
+
 
 
 
