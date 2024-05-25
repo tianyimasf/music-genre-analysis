@@ -34,6 +34,10 @@ install.packages("ggbeeswarm")
 ```
 
 ```{r}
+install.packages("fmsb")
+```
+
+```{r}
 library(tidyverse)
 library(ggplot2)
 library(dplyr)
@@ -43,6 +47,7 @@ library(hrbrthemes)
 library(viridis)
 library(lubridate)
 library(ggbeeswarm)
+library(fmsb)
 ```
 
 ## Loading data csv
@@ -185,6 +190,53 @@ So here according to how we designed `plot_tb()`, the correct syntax is `group_m
 by_genre %>% group_map(~plot_tb(.x, .y))
 ```
 
+
+```{r}
+feature_names <- feature_names[! feature_names%in% c("loudness", "tempo")]
+feature_names
+```
+```{r}
+radar_plot_tb <- function(tb, group_by_column){
+  tb_sub <- tb[,feature_names]
+  medians <- c()
+  for (i in 1:length(feature_names)){
+    col_numeric <- as.numeric(as.character(unlist(tb_sub[,feature_names[i]])))
+    medians[i] <- median(col_numeric)
+  }
+  range_max <- rep(1, length(feature_names))
+  range_min <- rep(0, length(feature_names))
+  
+  data_tb <- data.frame(matrix(ncol = length(feature_names), nrow = 0))
+  colnames(data_tb) <- feature_names
+  tb_genre <- group_by_column$Genre
+  
+  if (tb_genre == "") {
+    return("")
+  }
+  
+  data_tb[1,] <- range_max
+  data_tb[2,] <- range_min
+  data_tb[3,] <- medians
+  
+  radarchart( data_tb, axistype=1 , 
+ 
+  #custom polygon
+  pcol="#779ecc" , pfcol="#9fc0de" , plwd=3,
+
+  #custom the grid
+  cglcol="grey", cglty=1, axislabcol="grey", caxislabels=seq(0,1,0.1), cglwd=0.8,
+
+  #custom labels
+  vlcex=0.8, title=tb_genre
+  )
+}
+```
+
+```{r}
+by_genre %>% group_map(~radar_plot_tb(.x, .y))
+```
+
+
 ## 2. Visualize and compare each music feature across genres.
 
 After creating plots for all music features for each genre, I feel like it's hard to tell the uniqueness between genres with these graphs. Yes, the distributions for each feature can be very different within each genre, but if you look at all of the graphs holistically it seems like some features are low/distributed similarly for all genres, so its "local minimality" doesn't seem meaningful to me if that feature is low across genres. It seems like the graphs don't do justice to depict each genre.
@@ -231,11 +283,83 @@ plot_column <- function(tb, numerical_column) {
 }
 ```
 
+This is the for loop that will plot each feature across all genres.
 
 ```{r}
 for (col in feature_names) {
   plot_column(df, col)
 }
+```
+
+## 3. Visualizing popularity distribution for each genre
+
+```{r}
+breaks <- seq(0, 100, by=5)
+labels <- c()
+for (i in 1:20) {
+  labels[i] <- paste(as.character(5*(i-1)), " - ", as.character(5*i))
+}
+print(labels)
+```
+```{r}
+bins <- cut(df$Popularity, breaks = breaks, labels = labels)
+bins[1:10]
+```
+```{r}
+unique_value_freq <- as.data.frame(table(bins))
+unique_value_freq
+```
+
+```{r}
+ggplot(unique_value_freq, aes(x=bins, y=Freq)) +
+  geom_segment( aes(x=bins, xend=bins, y=0, yend=Freq), color="grey") +
+  geom_point( color="#98c1d9", size=4) +
+  theme_light() +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.border = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.x = element_text(angle = 30, hjust=0.6),
+  ) +
+  xlab("Popularity Range") +
+  ylab("# of songs with popularity in range") +
+  ggtitle("Popularity distribution in general")
+```
+
+TODO: add normalizing by under sampling
+
+```{r}
+plot_lolipop_2groups <- function(group_tb, group_by_column) {
+  group_bins <- cut(group_tb$Popularity, breaks = breaks, labels = labels)
+  group_unique_value_freq <- as.data.frame(table(group_bins))
+  unique_value_freq$Freq_group <- group_unique_value_freq$Freq
+  max_freq <- max(unique_value_freq$Freq)
+  max_group_freq <- max(unique_value_freq$Freq_group)
+  unique_value_freq$Freq_normalized <- as.integer(unique_value_freq$Freq*max_group_freq/max_freq)
+  
+  tb_genre <- group_by_column$Genre
+  
+  ggplot(unique_value_freq) +
+  geom_segment( aes(x=bins, xend=bins, y=Freq_normalized, yend=Freq_group), color="grey") +
+  geom_point( aes(x=bins, y=Freq_normalized), color="#9fc0de", size=4, alpha=0.65 ) +
+  geom_point( aes(x=bins, y=Freq_group), color="#ff985a", size=4, alpha=0.5 ) +
+  theme_ipsum() +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.border = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.x = element_text(angle = 30, hjust=0.6),
+  ) +
+  xlab("Popularity Range") +
+  ylab("# of songs with popularity in range") +
+  ggtitle(paste("Popularity distribution in general vs. ", tb_genre))
+}
+```
+
+```{r}
+df_bins <- df
+df_bins$bins <- bins
+df_bins %>% group_by(Genre) %>% group_map(~plot_lolipop_2groups(.x, .y))
 ```
 
 
