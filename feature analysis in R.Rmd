@@ -1,7 +1,7 @@
 ---
 title: "Music genre feature analysis"
 author: "Tianyi Ma (Alex)"
-date: "05.09.2023"
+date: "05.25.2024"
 output: html_document
     # odt_document: default
     # word_document: default
@@ -20,22 +20,30 @@ This R notebook analyze features related to 10 different music genres with the d
 ## Installing and loading common packages and libraries
 
 ```{r}
-install.packages('devtools')
+# install.packages('devtools')
 ```
 
 ```{r}
-install.packages('tidyverse', repos = "http://cran.us.r-project.org")
-devtools::install_github("hrbrmstr/hrbrthemes")
-install.packages('viridis')
+# install.packages('tidyverse', repos = "http://cran.us.r-project.org")
+# devtools::install_github("hrbrmstr/hrbrthemes")
+# install.packages('viridis')
 ```
 
 ```{r}
-install.packages("ggbeeswarm")
+# install.packages("ggbeeswarm")
 ```
 
 ```{r}
-install.packages("fmsb")
+# install.packages("fmsb")
 ```
+```{r}
+# install.packages('scales')
+```
+```{r}
+# install.packages('Rpdb')
+```
+
+
 
 ```{r}
 library(tidyverse)
@@ -48,6 +56,10 @@ library(viridis)
 library(lubridate)
 library(ggbeeswarm)
 library(fmsb)
+library(scales)
+library(stringr)
+library(Rpdb)
+options(warn=-1)
 ```
 
 ## Loading data csv
@@ -58,7 +70,7 @@ df <- read.csv("data/music genre data.csv", header=TRUE)
 
 ```{r}
 df <- df %>% drop_na()
-df
+head(df)
 ```
 
 ## 1. Visualize music features for each genre
@@ -69,14 +81,13 @@ First, we group songs from the same genre together.
 
 ```{r}
 by_genre <- df %>% group_by(Genre)
-by_genre
 ```
 
 Get the Alt music group to check that `group_by()` is working.
 
 ```{r}
 alt <- by_genre %>% filter(Genre=="Alt")
-alt
+head(alt)
 ```
 
 Now we select the columns that we want to visualize. This is equivalent to select different music features to depict a genre. Here we include instrumentalness, danceability, energy, loudness, speechiness, acousticness, liveness and valence. I'll also include their definitions and a dictionary that maps each term to its definition here. 
@@ -134,7 +145,7 @@ Finally, it's time to apply visualization to each genre group. First, we define 
 Technically, the normalized values lose the actual measured values which has physical meanings like number of decibels and BPM, but since we use min max normalization they will still preserve the relative scale between songs' feature values, so the distribution of values for those columns are still preserved and meaningful for our analysis.
 
 ```{r}
-normalize_column <- function(tb, col) {
+normalize_col <- function(tb, col) {
   col_min <- min(tb[, col])
   col_max <- max(tb[, col])
   col_range <- col_max - col_min
@@ -191,10 +202,27 @@ by_genre %>% group_map(~plot_tb(.x, .y))
 ```
 
 
+## 2. Visualize genre's music feature using radar plot
+
+After creating plots for all music features for each genre, I feel like it's hard to tell the uniqueness between genres with these graphs. Yes, the distributions for each feature can be very different within each genre, but if you look at all of the graphs holistically it seems like some features are low/distributed similarly for all genres, so its "local minimality" doesn't seem meaningful to me if that feature is low across genres. It seems like the graphs don't do justice to depict each genre.
+
+One problem here might be that using violin plot to show the distribution of the entire column doesn't do justice to show the more nuanced differences in specific, important statistics such as median and quantiles. For example, in our graph, if median1 = 0.2 and median2 = 0.3, it's hard to tell since the distribution might look very uniform, or the scale of the graph makes the difference in value not so distinguishable.
+
+To solve this, I introduce radar plot. You can find some good illustration of it [here](https://r-graph-gallery.com/spider-or-radar-chart.html). Basically it forms a polygon on a radar background where each corner point is the numerical value of the category that the corner represent. This way, we zoom in on the specific statistical values of each music features and compare them in a micro scale to better depict the associated genre.
+
+First, I'll simply remove loudness and tempo from feature names because they are features with physical meanings and we can do it without them anyway.
+
+
 ```{r}
 feature_names <- feature_names[! feature_names%in% c("loudness", "tempo")]
 feature_names
 ```
+For the data to be used to build the plot, I chose to visualize the median of each music feature values for each genre. Because these are continuous variables, it doesn't make sense to use the mode. Because averages can be skewed because of the distribution, median is more robust to skewness and can better capture the profile of the genre. 
+
+To build the radar plot, we need to specify the range of the radar values, namely 1 and 0 in this case. Those need to be the first and second row of the dataset, and the third row should be the actual values you want to visualize. 
+
+Then we just need to call the `radarchart()` function and add some aesthetics. Remember to install and load the `fmsb` library!
+
 ```{r}
 radar_plot_tb <- function(tb, group_by_column){
   tb_sub <- tb[,feature_names]
@@ -209,10 +237,6 @@ radar_plot_tb <- function(tb, group_by_column){
   data_tb <- data.frame(matrix(ncol = length(feature_names), nrow = 0))
   colnames(data_tb) <- feature_names
   tb_genre <- group_by_column$Genre
-  
-  if (tb_genre == "") {
-    return("")
-  }
   
   data_tb[1,] <- range_max
   data_tb[2,] <- range_min
@@ -232,18 +256,18 @@ radar_plot_tb <- function(tb, group_by_column){
 }
 ```
 
+The exciting bit - actually calling the function! You can definitely see that the depiction of each genre is much more pronounced using median values and radar plots.
+
 ```{r}
 by_genre %>% group_map(~radar_plot_tb(.x, .y))
 ```
 
 
-## 2. Visualize and compare each music feature across genres.
+## 3. Visualize and compare each music feature across genres.
 
-After creating plots for all music features for each genre, I feel like it's hard to tell the uniqueness between genres with these graphs. Yes, the distributions for each feature can be very different within each genre, but if you look at all of the graphs holistically it seems like some features are low/distributed similarly for all genres, so its "local minimality" doesn't seem meaningful to me if that feature is low across genres. It seems like the graphs don't do justice to depict each genre.
+Another nice way to uniquely depict each genre is to visualize and compare each music feature across genres.
 
-This leads me to attempt to visualize and compare each music feature across genres.
-
-This is much easier to do because we don't need to wrangle the data before feeding them into a plotting function. The format of the data is already correct. We just need a for loop to create the graph for each feature column. Let's create the plotting function for a specific column.
+This is much easier to do than the previous two attempts because we don't need to wrangle the data before feeding them into a plotting function. The format of the data is already correct. We just need a for loop to create the graph for each feature column. Let's create the plotting function for a specific column.
 
 We used violin graph last time and I love violin plot because it not only show you the quantiles but also roughly the actual distributions. So a feature could have multiple peak values and it would show in a violin plot but not a box plot. However, compare to histogram, violin plot could also smooth out the minimal points and makes it look like there are still some values on the low points even if there is none. Which is why I'll overlay the violin plot with a jitter points plot to allow a more robust understanding of the value distributions. To avoid clustering the plots with too much data (we do have a relatively big dataset if we're actually plotting every point), I sampled 500 rows from the dataset and used that to plot the jitter points plot. 
 
@@ -277,7 +301,8 @@ plot_column <- function(tb, numerical_column) {
       ) +
       xlab("Music Genres") +
       ylab("Distribution") +
-      ggtitle(paste("Genre Value Distribution for Value: ", numerical_column))
+      labs(caption=definitions_helper[numerical_column],
+           title=paste("Genre Value Distribution for Value: ", numerical_column))
   
   print(p)
 }
@@ -291,29 +316,41 @@ for (col in feature_names) {
 }
 ```
 
-## 3. Visualizing popularity distribution for each genre
+## 4. Visualizing popularity distribution for each genre
+
+It's very important for music businesses to get more insights on the popularity of songs. Let's try to visualize popularities in different ways to gain more insights into this attribute.
+
+For this feature, I'm binning the data into 9 bins each covers a 10 value range, fro example, 0-10, 10-20, ..., until 90-100. The popularity metric from the Spotify API ranges 0 - 100, so binning the values this way preserves some granularity without creating too many bins. 
+
+Programmatically, we define the breaks and labels, and then use `cut()` to segment the data and then return a new column that tag each popularity measure with one of the bin labels, which we call `bins`.
 
 ```{r}
-breaks <- seq(0, 100, by=5)
+breaks <- seq(0, 100, by=10)
 labels <- c()
-for (i in 1:20) {
-  labels[i] <- paste(as.character(5*(i-1)), " - ", as.character(5*i))
+for (i in 1:10) {
+  labels[i] <- paste(as.character(10*(i-1)), " - ", as.character(10*i))
 }
 print(labels)
 ```
+
 ```{r}
 bins <- cut(df$Popularity, breaks = breaks, labels = labels)
 bins[1:10]
 ```
+
+After we get the bins column, we need to count the unique values, namely what are the unique values, and how many times each value appears in the column. To achieve that, I convert `table(bins)` to a dataframe with two columns: `bins` and `Freq` where `bins` are the unique values and `Freq` is the count of each unique value. 
+
 ```{r}
 unique_value_freq <- as.data.frame(table(bins))
 unique_value_freq
 ```
 
+We can than easily plot the popularity distribution with this dataframe, using `geom_segment()` to create a vertical line representing each value and `geom_point()` to add a dot to the end of each line so that the tip is emphasized. This kind of graph is called a lolipop graph due to the appearance resembling lolippops, and I especially like this representation for comparing values because it makes it very clear the scale of each value and easy to see which values are larger or smaller. 
+
 ```{r}
 ggplot(unique_value_freq, aes(x=bins, y=Freq)) +
   geom_segment( aes(x=bins, xend=bins, y=0, yend=Freq), color="grey") +
-  geom_point( color="#98c1d9", size=4) +
+  geom_point( color="#98c1d9", size=6) +
   theme_light() +
   theme(
     panel.grid.major.x = element_blank(),
@@ -322,27 +359,42 @@ ggplot(unique_value_freq, aes(x=bins, y=Freq)) +
     axis.text.x = element_text(angle = 30, hjust=0.6),
   ) +
   xlab("Popularity Range") +
-  ylab("# of songs with popularity in range") +
-  ggtitle("Popularity distribution in general")
+  ylab("# of songs with popularity in range")  +
+  labs(title="Popularity distribution in general")
 ```
 
-TODO: add normalizing by under sampling
+Our visualization was successful, but note that this is the distribution for all songs, without grouping by genres. I'm curious about how the distribution of popularity values are different from the general distribution. To do this, we create a 2 categorical variable lolipop graph for each genre.
+
+First, we need to scale down the general distribution somehow. If you look at the values in each bin, they are garanteed to be much higher than value of each bin for a specific genre, just because the sheer volumn of data is larger than that of one genre. Naturally we can just multiply each bin value with (number of rows in genre group)/(total number of rows), but that's a bit artificial and doesn't make physical sense. Here, I chose to sample (number of rows in genre group) rows from the entire dataset and this subset can serve as a sensible representation of the entire dataset. 
+
+To do that, we construct a function called `get_undersampled_unique_value_freq()` to sample the dataset and calculate bins.
+
 
 ```{r}
-plot_lolipop_2groups <- function(group_tb, group_by_column) {
+get_undersampled_unique_value_freq <- function(df, group_nrow) {
+  df_sample <- df[sample(nrow(df), group_nrow), ]
+  bins <- cut(df_sample$Popularity, breaks = breaks, labels = labels)
+  unique_value_freq <- as.data.frame(table(bins))
+  return(unique_value_freq)
+}
+```
+
+Then we just create the popularity bin values of the genre and attach it to the general undersampled bin values, so that we can use that dataframe as data for the plot. The syntax is kind of the same as the general distribution plot. I also used a red orange color for individual genre bin values so that it naturally grabs attention and draws people's eye to the genre value but still with an available reference to the general distribution bin value in blue.
+
+
+```{r}
+lolipop_plot_2groups <- function(group_tb, group_by_column) {
+  unique_value_freq_undersampled <- get_undersampled_unique_value_freq(df, nrow(group_tb))
   group_bins <- cut(group_tb$Popularity, breaks = breaks, labels = labels)
   group_unique_value_freq <- as.data.frame(table(group_bins))
-  unique_value_freq$Freq_group <- group_unique_value_freq$Freq
-  max_freq <- max(unique_value_freq$Freq)
-  max_group_freq <- max(unique_value_freq$Freq_group)
-  unique_value_freq$Freq_normalized <- as.integer(unique_value_freq$Freq*max_group_freq/max_freq)
+  unique_value_freq_undersampled$Freq_group <- group_unique_value_freq$Freq
   
   tb_genre <- group_by_column$Genre
   
-  ggplot(unique_value_freq) +
-  geom_segment( aes(x=bins, xend=bins, y=Freq_normalized, yend=Freq_group), color="grey") +
-  geom_point( aes(x=bins, y=Freq_normalized), color="#9fc0de", size=4, alpha=0.65 ) +
-  geom_point( aes(x=bins, y=Freq_group), color="#ff985a", size=4, alpha=0.5 ) +
+  ggplot(unique_value_freq_undersampled) +
+  geom_segment( aes(x=bins, xend=bins, y=Freq, yend=Freq_group), color="grey") +
+  geom_point( aes(x=bins, y=Freq), color="#9fc0de", size=5, alpha=0.65 ) +
+  geom_point( aes(x=bins, y=Freq_group), color="#FF4433", size=5, alpha=0.5 ) +
   theme_ipsum() +
   theme(
     panel.grid.major.x = element_blank(),
@@ -359,9 +411,268 @@ plot_lolipop_2groups <- function(group_tb, group_by_column) {
 ```{r}
 df_bins <- df
 df_bins$bins <- bins
-df_bins %>% group_by(Genre) %>% group_map(~plot_lolipop_2groups(.x, .y))
+df_bins %>% group_by(Genre) %>% group_map(~lolipop_plot_2groups(.x, .y))
 ```
 
+## 5. Visualizing music features of popular songs in genres
+
+It seems like the genre popularity distributions are pretty close to the general popularity distributions. One question is: does popular songs has a different music feature distribution than others? We can level up the single polygon radar chart we constructed earlier and overlay two polygons in one chart, one for popular song stats and another one for general song stats.
+
+Here, we first include popularity in `feature_names` so that we get that column when subsetting the data.
+
+```{r}
+feature_names <- append(feature_names, "Popularity")
+feature_names
+```
+
+To follow coding best practices, we remove the part that build the dataframe to feed into radar chart from the plotting function and create a function of its own. We use the median measure for now. Because popular songs might have more extreme skewness/max/min, it might be worthwhile to try those too later.
+
+```{r}
+build_data_tb <- function(tb, popularity_threshold){
+  tb_sub <- tb[,feature_names]
+  tb_filtered <- filter(tb_sub, Popularity >= popularity_threshold)
+  medians_filtered <- c()
+  medians_sub <- c()
+
+  feature_names_wo_popularity <- feature_names[1:7]
+  for (i in 1:length(feature_names_wo_popularity)){
+    filtered_col_numeric <- as.numeric(as.character(unlist(tb_filtered[,feature_names[i]])))
+    medians_filtered[i] <- median(filtered_col_numeric)
+    sub_col_numeric <- as.numeric(as.character(unlist(tb_sub[,feature_names[i]])))
+    medians_sub[i] <- median(sub_col_numeric)
+  }
+  range_max <- rep(1, length(feature_names_wo_popularity))
+  range_min <- rep(0, length(feature_names_wo_popularity))
+  
+  data_tb <- data.frame(matrix(ncol = length(feature_names_wo_popularity), nrow = 0))
+  data_tb[1,] <- medians_filtered
+  data_tb[2,] <- medians_sub
+  
+  colnames(data_tb) <- feature_names_wo_popularity
+  rownames(data_tb) <- c("popualar songs", "all songs")
+  
+  data_tb <- rbind(range_max , range_min , data_tb)
+  
+  return(data_tb)
+}
+```
+
+We set a threshold for popular songs, and plot the data. The `scales` library allow us to set transparency for color without needing the `alpha` argument to be prebuild into the `radarchart` function.
+
+```{r}
+popularity_threshold <- 80
+
+radar_plot_tb_popular <- function(tb, group_by_column){
+  tb_genre <- group_by_column$Genre
+  
+  data_tb <- build_data_tb(tb, popularity_threshold)
+
+  colors_border=c( scales::alpha("#FF6A4C", 0.6), scales::alpha("#779ecc", 0.5) )
+  colors_in=c( scales::alpha("#F99244", 0.6), scales::alpha("#9fc0de", 0.5) )
+
+  radarchart( data_tb    , axistype=0, 
+    #custom polygon
+    pcol=colors_border, pfcol=colors_in , plwd=2 , plty=1,
+    #custom the grid
+    cglcol="grey", cglty=1, axislabcol="black", cglwd=0.8, caxislabels=seq(0,1,0.1), 
+    #custom labels
+    vlcex=0.8, title=tb_genre
+    )
+}
+```
+
+After plotting this, it seems like the popular songs still have relatively the same features as their genre. Let's replace measuring using median with using different quantiles, to capture the more extreme cases in the popular songs subset.
+
+```{r}
+by_genre %>% group_map(~radar_plot_tb_popular(.x, .y))
+```
+
+
+To further organize our code, I created a function that takes a percentile probablity and calculate the stats.
+
+
+```{r}
+calculate_data <- function(tb_sub, tb_filtered, prob) {
+  filtered <- c()
+  sub <- c()
+
+  feature_names_wo_popularity <- feature_names[1:7]
+  for (i in 1:length(feature_names_wo_popularity)){
+    filtered_col_numeric <- as.numeric(as.character(unlist(tb_filtered[,feature_names[i]])))
+    sub_col_numeric <- as.numeric(as.character(unlist(tb_sub[,feature_names[i]])))
+    filtered[i] <- quantile(filtered_col_numeric, probs=prob)
+    sub[i] <- quantile(sub_col_numeric, probs=prob)
+  }
+
+  return(list("filtered"=filtered, "sub"=sub))
+}
+```
+
+Then, I refactored the `build_data_tb()` function to include a probability argument and calculate data for that percentile for the group table and a subset of popular songs in the group.
+
+```{r}
+build_data_tb_with_measure <- function(tb, popularity_threshold, prob){
+  tb_sub <- tb[,feature_names]
+  tb_filtered <- filter(tb_sub, Popularity >= popularity_threshold)
+  stats <- calculate_data(tb_sub, tb_filtered, prob)
+  
+  feature_names_wo_popularity <- feature_names[1:7]
+  
+  range_max <- rep(1, length(feature_names_wo_popularity))
+  range_min <- rep(0, length(feature_names_wo_popularity))
+  
+  data_tb <- data.frame(matrix(ncol = length(feature_names_wo_popularity), nrow = 0))
+  data_tb[1,] <- stats$filtered
+  data_tb[2,] <- stats$sub
+  
+  colnames(data_tb) <- feature_names_wo_popularity
+  rownames(data_tb) <- c("popualar songs", "all songs")
+  
+  data_tb <- rbind(range_max , range_min , data_tb)
+  
+  return(data_tb)
+}
+```
+
+With the data table built from `build_data_tb_with_measure()`, the plotting function can cleanly get the data needed for plotting and also with the flexibility of specifying various percentiles. Note that if we want to check out maximums, we just need to set `prob = 1`.
+
+```{r}
+radar_plot_tb_popular_with_measure <- function(tb, group_by_column, prob){
+  tb_genre <- group_by_column$Genre
+  
+  data_tb <- build_data_tb_with_measure(tb, popularity_threshold, prob)
+
+  colors_border=c( scales::alpha("#FF6A4C", 0.6), scales::alpha("#779ecc", 0.5) )
+  colors_in=c( scales::alpha("#F99244", 0.6), scales::alpha("#9fc0de", 0.5) )
+  
+  type_title <- ""
+  if (prob == 1) {
+    type_title <- "Max"
+  } else {
+    type_title <- paste("Quantile: ", as.character(prob))
+  }
+
+  radarchart( data_tb    , axistype=0, 
+    #custom polygon
+    pcol=colors_border, pfcol=colors_in , plwd=2 , plty=1,
+    #custom the grid
+    cglcol="grey", cglty=1, axislabcol="black", cglwd=0.8, caxislabels=seq(0,1,0.1), 
+    #custom labels
+    vlcex=0.8, title=paste(tb_genre, type_title)
+    )
+}
+```
+
+Now we can start experimenting with different quantiles. 
+
+```{r}
+by_genre %>% group_map(~radar_plot_tb_popular_with_measure(.x, .y, prob=0.75))
+```
+
+
+```{r}
+by_genre %>% group_map(~radar_plot_tb_popular_with_measure(.x, .y, prob=1))
+```
+
+```{r}
+by_genre %>% group_map(~radar_plot_tb_popular_with_measure(.x, .y, prob=0.25))
+```
+
+```{r}
+by_genre %>% group_map(~radar_plot_tb_popular_with_measure(.x, .y, prob=0.85))
+```
+
+It does seem like the difference in stats data is a bit more extreme when selecting more extreme percentiles!
+
+## 6. Comparing distribution of keys between each genre and the dataset
+
+The key of a song ranges from -1 to 10, -1 means the key is not detected, where 1 - 10 is mapped to pitch classes using [the standard mapping](https://en.wikipedia.org/wiki/Pitch_class). E.g. 0 = C, 1 = C♯/D♭, 2 = D, and so on. It's an important property of a song, and it'd be interesting to see the key distribution for each genre compare to the dataset. 
+
+Here, we combine the undersampling, getting unique value counts, and converting wide format to long format techniques we used before to create the data table for plotting.
+
+```{r}
+create_keys_data_tb <- function(group_tb, group_nrow) {
+  df_sample <- df[sample(nrow(df), group_nrow), ]
+  data_tb <- as.data.frame(table(df_sample$key))
+  data_tb$group_key <- as.data.frame(table(group_tb$key))$Freq
+  colnames(data_tb) <- c("key", "all_key", "group_key")
+  data_tb <- pivot_longer(data_tb, cols = c("all_key", "group_key"))
+  data_tb$name <- factor(data_tb$name, c("all_key", "group_key"))
+  
+  return(data_tb)
+} 
+```
+
+Here we plot bar graph for two variables, the key distribution for all data and for a genre subgroup. 
+
+```{r}
+bar_plot_tb_compare<- function(tb, group_by_column) {
+  data_tb <- create_keys_data_tb(tb, nrow(tb))
+  tb_genre <- group_by_column$Genre
+  
+  p <- data_tb %>%
+  ggplot( aes(key, value, fill=name)) +
+    geom_bar(stat="identity", position = "dodge") +
+    scale_fill_manual(values=c("#4793AF", "#FFC470")) +
+    theme_ipsum() +
+    ylab("value counts") +
+    ggtitle(paste("Key distribution: All songs vs. Genre: ", tb_genre ))
+} 
+```
+
+Looking at graphs for each genre, we can see that some of them have somehow different distribution compare to the general distribution, while others are relatively consistent with the general distribution.
+
+```{r}
+by_genre %>% group_map(~bar_plot_tb_compare(.x, .y))
+```
+
+
+
+## 7. Ranking Artists
+
+Another question I'm interested in this dataset is: what are the popular artists? We can use the popularity attribute for songs to calculate the popularity by averaging through the artist's songs popularity. But here, I used a different and seemly simpler measure that makes the most intuitive sense - how many songs the artist have in this dataset. I can definitely chose the former definition, but I want to practice writing code to achieve the latter. 
+
+First, I counted how frequent each artist appeared in the dataset, ranked them in descending order, and selected the top 20 artists and their number of songs.
+
+```{r}
+artist_freq <- as.data.frame(table(df$Artist.Name))
+artist_freq <- artist_freq[order(artist_freq$Freq, decreasing = TRUE),]
+colnames(artist_freq) <- c("Artist.Name", "Freq")
+row.names(artist_freq) <- NULL
+artist_freq <- artist_freq %>% top_n(20)
+artist_freq
+```
+
+The only thing left to do is to create the graph. Here, I used bar chart to visualize the ranking since I can make it look really similar to how rankings are usually visualized: horizontally, with each column representing the rank value, and possibly with numerical labels of the value for each column. I had a clear vision and did exactly that. Furthermore, I highlighted the top 3 artist with bright red orange color and made the artist names bold. I removed all references like backgrounds, axis and border so that the columns are the only visual element in the graph.
+
+```{r}
+colors <- c(rep("#FF5349", 3), rep("#9fc0de", 17))
+text_formats <- c(rep("plain", 17), rep("bold", 3))
+
+artist_freq %>%
+  mutate(Artist.Name = fct_reorder(Artist.Name, Freq)) %>%
+  ggplot( aes(x=Artist.Name, y=Freq)) +
+    geom_bar(stat="identity", fill=colors, alpha=.8, width=.75) +
+    geom_text(aes(label = Freq), nudge_y = 3, size=3.75, color="#808080") +
+    coord_flip() +
+    theme(
+    panel.grid.major.x = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.x = element_blank(),
+    axis.text.y = element_text(face=text_formats),
+    axis.title.x = element_text(color="#808080"),
+    axis.title.y = element_blank(),
+    plot.title = element_text(color="#5a5a5a")) +
+    ylab("number of songs") +
+    ggtitle("Artist Rank Top 20")
+```
+
+## Conclusion
+
+This notebook conducted exploratory data analysis and data visualization for the music feature for genre dataset. Focusing on a variety of features and questions, the notebook created aesthetic graphs with a range of types, like violin graphs with jittered points, lolipop graphs, radar graphs, etc., that are suitable for answering the specific questions and gaining insights. Alongside the visualization, different techniques, library functions and statistical concepts are applied to prepare data and surface insights from graphs. Sometimes, meaningful insights are found, related to the uniqueness of songs from a particular genre or of a specific popularity. Other times, the analysis confirmed that genre feature stats are consistent with the general stats for all songs.
 
 
 
